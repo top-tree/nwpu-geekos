@@ -36,6 +36,11 @@ doc/hacking.idx
 doc/hacking.log
 doc/hacking.out
 
+# Bear compilation database, local caches, and logs.
+compile_commands.json
+.cache/
+*.log
+
 # Editor temporary files.
 *~
 *.swp
