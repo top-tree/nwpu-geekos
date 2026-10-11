@@ -1,0 +1,43 @@
+# Build output: keep Makefiles, .bochsrc, and .ignore placeholders.
+**/build/**/*.o
+**/build/**/*.d
+**/build/**/*.a
+**/build/**/*.bin
+**/build/**/*.exe
+**/build/**/*.elf
+**/build/**/*.map
+**/build/**/*.syms
+**/build/depend.mak
+**/build/libc/errno.c
+
+# Generated disk images.
+**/build/fd.img
+**/build/fd_aug.img
+**/build/diskc.img
+**/build/diskd.img
+
+# Bochs runtime logs.
+**/build/bochs.out
+**/build/bochs.log
+**/build/bochsout.txt
+
+# Standalone host tool output.
+src/project*/src/tools/buildFat
+src/project*/src/tools/buildFat.o
+
+# Local documentation build settings and intermediates.
+doc/Makefile.local
+doc/hacking-html.xsl
+doc/hacking-db2latex.xsl
+doc/hacking.tex
+doc/hacking.aux
+doc/hacking.glo
+doc/hacking.idx
+doc/hacking.log
+doc/hacking.out
+
+# Editor temporary files.
+*~
+*.swp
+*.swo
+.DS_Store
