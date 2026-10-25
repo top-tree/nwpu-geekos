@@ -9,24 +9,18 @@
  * redistribute, and modify it as specified in the file "COPYING".
  */
 
-#include <geekos/argblock.h>
-
-int main(int argc, char **argv);
-void Exit(int exitCode);
-
 /*
- * Entry point.  Calls user program's main() routine, then exits.
+ * Trampoline enters with a far return frame (EIP, CS) on the stack.
+ * Keep the entry sequence in top-level assembly so the compiler cannot
+ * add a prologue or epilogue around that frame.
  */
-__attribute__((optimize("no-omit-frame-pointer")))
-void _Entry(void)
-{
-
-    /* Call main(); arguments won't be needed */
-    main(0, 0);
-
-    /* make the inter-selector jump back */
-  __asm__ __volatile__ ("leave");
-  __asm__ __volatile__ ("lret");
-
-}
-
+__asm__(
+    ".text\n"
+    ".globl _Entry\n"
+    "_Entry:\n"
+    "pushl $0\n"
+    "pushl $0\n"
+    "call main\n"
+    "addl $8, %esp\n"
+    "lret\n"
+);

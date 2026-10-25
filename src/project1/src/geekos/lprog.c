@@ -179,13 +179,30 @@ fail:
 }
 
 
-static void Printrap_Handler( struct Interrupt_State* state )
-{
-  char * msg = (char *)virtSpace + state->eax;
-  #pragma GCC diagnostic ignored "-Wformat-security"
-  Print(msg);
-  #pragma GCC diagnostic warning "-Wformat-security"
+// static void Printrap_Handler( struct Interrupt_State* state )
+// {
+//   char * msg = (char *)virtSpace + state->eax;
+//   #pragma GCC diagnostic ignored "-Wformat-security"
+//   Print(msg);
+//   #pragma GCC diagnostic warning "-Wformat-security"
 
-  g_needReschedule = true;
-  return;
+//   g_needReschedule = true;
+//   return;
+// }
+static void Printrap_Handler(struct Interrupt_State* state)
+{
+    ulong_t addr = state->eax;
+    ulong_t stackBase = (ulong_t)g_currentThread->stackPage;
+    char *msg;
+
+    if (addr >= stackBase && addr - stackBase < PAGE_SIZE) {
+        /* 当前内核栈中的地址，直接使用 */
+        msg = (char *)addr;
+    } else {
+        /* 程序数据段中的偏移，转换为内核地址 */
+        msg = (char *)virtSpace + addr;
+    }
+
+    Print("%s", msg);
+    g_needReschedule = true;
 }

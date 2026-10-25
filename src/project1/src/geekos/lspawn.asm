@@ -45,7 +45,7 @@ EXPORT Trampoline
 align 8
 Trampoline:
 ;; first we fetch the code selector off the stack	
-	mov	ebx, [esp+4]
+	mov	edx, [esp+4]
 ;; then we fetch the data selector off the stack	
 	mov	eax, [esp+8]
 ;; and finally the entry address	
@@ -63,7 +63,7 @@ Trampoline:
 	
 ;; now make the inter-selector jump
 ;; we land in different cs/ds descriptors 
-	push    ebx
+	push    edx
 	push    ecx
 	retf		
 .backhere:
