@@ -21,7 +21,16 @@
 #include <geekos/timer.h>
 #include <geekos/keyboard.h>
 
-
+static void print_key(ulong_t arg) {
+    while (1) {
+        Keycode c = Wait_For_Key();
+        if (c == ('d' | KEY_CTRL_FLAG)) {
+        break;
+    }
+    Print("%c", (uchar_t)c);
+    }
+    Exit(0);
+}
 
 
 /*
@@ -48,8 +57,8 @@ void Main(struct Boot_Info* bootInfo)
     Set_Current_Attr(ATTRIB(BLACK, GRAY));
 
 
-    TODO("Start a kernel thread to echo pressed keys and print counts");
-
+    // TODO("Start a kernel thread to echo pressed keys and print counts");
+    Start_Kernel_Thread(print_key, 0, PRIORITY_NORMAL, true);
 
 
     /* Now this thread is done. */
