@@ -31,7 +31,16 @@ static void print_key(ulong_t arg) {
     }
     Exit(0);
 }
-
+static void print_A(ulong_t arg) {
+    while (1) {
+        Print("A");
+    }
+}
+static void print_B(ulong_t arg) {
+    while (1) {
+        Print("B");
+    }
+}
 
 /*
  * Kernel C code entry point.
@@ -59,7 +68,8 @@ void Main(struct Boot_Info* bootInfo)
 
     // TODO("Start a kernel thread to echo pressed keys and print counts");
     Start_Kernel_Thread(print_key, 0, PRIORITY_NORMAL, true);
-
+    Start_Kernel_Thread(print_A, 0, PRIORITY_NORMAL, true);
+    Start_Kernel_Thread(print_B, 0, PRIORITY_NORMAL, true);
 
     /* Now this thread is done. */
     Exit(0);
