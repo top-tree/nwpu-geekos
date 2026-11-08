@@ -105,5 +105,14 @@ static void Mount_Root_Filesystem(void)
 
 static void Spawn_Init_Process(void)
 {
-    TODO("Spawn the init process");
+    int rc;
+    struct Kernel_Thread *initProcess;
+    Print("Spawning init process (%s)\n", INIT_PROGRAM);
+    rc = Spawn(INIT_PROGRAM, INIT_PROGRAM, &initProcess);
+    if (rc < 0) {
+        Print("Failed to spawn init process: %d\n", rc);
+        return;
+    }
+    rc = Join(initProcess);
+    Print("Init process exited with code %d\n", rc);
 }
