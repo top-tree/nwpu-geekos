@@ -17,6 +17,9 @@ struct Kernel_Thread;
 struct User_Context;
 struct Interrupt_State;
 
+extern int g_SchedPolicy;
+int Change_Scheduling_Policy(int policy, int quantum);
+
 /*
  * Queue of threads.
  * This is used for the run queue(s), and also for

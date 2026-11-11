@@ -17,12 +17,15 @@
 #include <geekos/kthread.h>
 #include <geekos/malloc.h>
 #include <geekos/user.h>
-
+#include <geekos/timer.h>
 
 /* ----------------------------------------------------------------------
  * Private data
  * ---------------------------------------------------------------------- */
-
+int g_SchedPolicy = 0;
+/* Trace only children of the process that selects the scheduling policy. */
+static int s_traceOwnerPid;
+static char s_scheduleTrace[4096];
 /*
  * List of all threads in the system.
  */
@@ -71,6 +74,37 @@ static tlocal_destructor_t s_tlocalDestructors[MAX_TLOCAL_KEYS];
 /* ----------------------------------------------------------------------
  * Private functions
  * ---------------------------------------------------------------------- */
+
+int Change_Scheduling_Policy(int policy, int quantum) {
+    struct Kernel_Thread *thread;
+    s_traceOwnerPid = g_currentThread->pid;
+    s_scheduleTrace[0] = '\0';
+    g_Quantum = quantum;
+    if (policy == g_SchedPolicy) {
+        return 0;
+    }
+    g_SchedPolicy = policy;
+    if (policy == 0) {
+        for (int i = 1; i < MAX_QUEUE_LEVEL; i++) {
+            while ((thread = Get_Front_Of_Thread_Queue(&s_runQueue[i])) != 0) {
+                Remove_Thread(&s_runQueue[i], thread);
+                thread->currentReadyQueue = 0;
+                Enqueue_Thread(&s_runQueue[0], thread);
+            }
+        }
+    } else {
+        for (thread = s_runQueue[0].head; thread != 0;
+            thread = Get_Next_In_Thread_Queue(thread)) {
+            if (thread->priority == PRIORITY_IDLE) {
+                Remove_Thread(&s_runQueue[0], thread);
+                thread->currentReadyQueue = MAX_QUEUE_LEVEL - 1;
+                Add_To_Front_Of_Thread_Queue(&s_runQueue[MAX_QUEUE_LEVEL - 1], thread);
+                break;
+            }
+        }
+    }
+    return 0;
+}
 
 /*
  * Initialize a new Kernel_Thread.
@@ -163,14 +197,13 @@ static __inline__ void Push(struct Kernel_Thread* kthread, ulong_t value)
  */
 static void Destroy_Thread(struct Kernel_Thread* kthread)
 {
-
+    Detach_User_Context(kthread);
     /* Dispose of the thread's memory. */
     Disable_Interrupts();
-    Free_Page(kthread->stackPage);
-    Free_Page(kthread);
-
     /* Remove from list of all threads */
     Remove_From_All_Thread_List(&s_allThreadList, kthread);
+    Free_Page(kthread->stackPage);
+    Free_Page(kthread);
 
     Enable_Interrupts();
 
@@ -552,15 +585,16 @@ Start_User_Thread(struct User_Context* userContext, bool detached)
  * Add given thread to the run queue, so that it
  * may be scheduled.  Must be called with interrupts disabled!
  */
-void Make_Runnable(struct Kernel_Thread* kthread)
-{
+void Make_Runnable(struct Kernel_Thread* kthread) {
     KASSERT(!Interrupts_Enabled());
-
-    { int currentQ = kthread->currentReadyQueue;
-      KASSERT(currentQ >= 0 && currentQ < MAX_QUEUE_LEVEL);
-      kthread->blocked = false;
-      Enqueue_Thread(&s_runQueue[currentQ], kthread);
+    if (g_SchedPolicy == 0) {
+        kthread->currentReadyQueue = 0;
     }
+    else if (kthread->priority == PRIORITY_IDLE) {
+        kthread->currentReadyQueue = MAX_QUEUE_LEVEL - 1;
+    }
+    kthread->blocked = false;
+    Enqueue_Thread(&s_runQueue[kthread->currentReadyQueue], kthread);
 }
 
 /*
@@ -586,16 +620,25 @@ struct Kernel_Thread* Get_Current(void)
  * Get the next runnable thread from the run queue.
  * This is the scheduler.
  */
-struct Kernel_Thread* Get_Next_Runnable(void)
-{
+struct Kernel_Thread* Get_Next_Runnable(void) {
     struct Kernel_Thread* best = 0;
-
+    int levels = g_SchedPolicy == 0 ? 1 : MAX_QUEUE_LEVEL;
     /* Find the best thread from the highest-priority run queue */
-    TODO("Find a runnable thread from run queues");
-
-/*
- *    Print("Scheduling %x\n", best);
- */
+    // TODO("Find a runnable thread from run queues");
+    for (int i = 0; i < levels; i++) {
+        best = Find_Best(&s_runQueue[i]);
+        if (best != 0) {
+            Remove_Thread(&s_runQueue[i], best);
+            break;
+        }
+    }
+    if (best != 0 && best->userContext != 0 && best->owner != 0 &&
+        best->owner->pid == s_traceOwnerPid) {
+        size_t length = strlen(s_scheduleTrace);
+        if (length < sizeof(s_scheduleTrace) - 1)
+            snprintf(s_scheduleTrace + length, sizeof(s_scheduleTrace) - length,
+                "%lu:%d@%d ", g_numTicks, best->pid, best->currentReadyQueue);
+    }
     return best;
 }
 
@@ -651,6 +694,13 @@ void Exit(int exitCode)
 
     if (Interrupts_Enabled())
 	Disable_Interrupts();
+
+    if (current->pid == s_traceOwnerPid) {
+        s_traceOwnerPid = 0;
+        Print("\nDispatches (tick:PID@queue):\n%s\n", s_scheduleTrace);
+        if (strlen(s_scheduleTrace) == sizeof(s_scheduleTrace) - 1)
+            Print("Trace buffer full; remaining dispatches omitted.\n");
+    }
 
     /* Thread is dead */
     current->exitCode = exitCode;
@@ -755,7 +805,11 @@ void Wait(struct Thread_Queue* waitQueue)
     struct Kernel_Thread* current = g_currentThread;
 
     KASSERT(!Interrupts_Enabled());
-
+    if (g_SchedPolicy == 1 &&
+        current->priority != PRIORITY_IDLE &&
+        current->currentReadyQueue > 0) {
+            current->currentReadyQueue--;
+        }
     /* Add the thread to the wait queue. */
     current->blocked = true;
     Enqueue_Thread(waitQueue, current);

@@ -21,6 +21,27 @@
 #include <geekos/timer.h>
 #include <geekos/vfs.h>
 
+#define MAX_LEN 25
+#define MAX_REGISTERED_THREADS 20
+
+struct Semaphore;
+DEFINE_LIST(Semaphore_List, Semaphore);
+
+struct Semaphore {
+    int semaphoreID;
+    char *semaphoreName;
+    int value;
+    int registeredThreadCount;
+    struct Kernel_Thread *registeredThreads[MAX_REGISTERED_THREADS];
+    struct Thread_Queue waitingThreads;
+    DEFINE_LINK(Semaphore_List, Semaphore);
+};
+
+IMPLEMENT_LIST(Semaphore_List, Semaphore);
+
+static struct Semaphore_List s_SemaphoreList;
+static int ID = 0;
+
 static int Copy_User_String(ulong_t userAddr, ulong_t length, ulong_t maxLength,
     char **pStr)
 {
@@ -232,7 +253,16 @@ static int Sys_GetPID(struct Interrupt_State* state)
  */
 static int Sys_SetSchedulingPolicy(struct Interrupt_State* state)
 {
-    TODO("SetSchedulingPolicy system call");
+    // TODO("SetSchedulingPolicy system call");
+    int policy = state->ebx;
+    int quantum = state->ecx;
+    if (policy < 0 || policy > 1) {
+        return -1;
+    }
+    if (quantum <= 0) {
+        return -1;
+    }
+    return Change_Scheduling_Policy(policy, quantum);
 }
 
 /*
@@ -244,7 +274,39 @@ static int Sys_SetSchedulingPolicy(struct Interrupt_State* state)
  */
 static int Sys_GetTimeOfDay(struct Interrupt_State* state)
 {
-    TODO("GetTimeOfDay system call");
+    // TODO("GetTimeOfDay system call");
+    return g_numTicks;
+}
+
+int Semaphore_Create(char *semName, int initialValue)
+{
+    struct Kernel_Thread *current = g_currentThread;
+    struct Semaphore *s, *sem;
+    for (s = Get_Front_Of_Semaphore_List(&s_SemaphoreList);
+         s != 0; s = Get_Next_In_Semaphore_List(s)) {
+        if (strcmp(s->semaphoreName, semName) == 0) {
+            Free(semName);
+            if (s->registeredThreadCount >= MAX_REGISTERED_THREADS) {
+                return -1;
+            }
+            s->registeredThreads[s->registeredThreadCount++] = current;
+            return s->semaphoreID;
+        }
+    }
+    sem = Malloc(sizeof(*sem));
+    if (sem == 0) {
+        Free(semName);
+        return -1;
+    }
+    sem->semaphoreID = ID++;
+    sem->semaphoreName = semName;
+    sem->value = initialValue;
+    sem->registeredThreadCount = 1;
+    sem->registeredThreads[0] = current;
+    Clear_Thread_Queue(&sem->waitingThreads);
+    Add_To_Back_Of_Semaphore_List(&s_SemaphoreList, sem);
+
+    return sem->semaphoreID;
 }
 
 /*
@@ -257,7 +319,41 @@ static int Sys_GetTimeOfDay(struct Interrupt_State* state)
  */
 static int Sys_CreateSemaphore(struct Interrupt_State* state)
 {
-    TODO("CreateSemaphore system call");
+    // TODO("CreateSemaphore system call");
+    char *semName = 0;
+    int initialValue = state->edx;
+    int rc;
+    if (initialValue < 0) {
+        return -1;
+    }
+    rc = Copy_User_String(state->ebx, state->ecx, MAX_LEN, &semName);
+    if (rc < 0) {
+        return rc;
+    }
+    return Semaphore_Create(semName, initialValue);
+}
+
+int Semaphore_Acquire(int semID)
+{
+    struct Kernel_Thread *current = g_currentThread;
+    struct Semaphore *s;
+    for (s = Get_Front_Of_Semaphore_List(&s_SemaphoreList);
+         s != 0; s = Get_Next_In_Semaphore_List(s)) {
+        if (s->semaphoreID != semID)
+            continue;
+
+        for (int i = 0; i < s->registeredThreadCount; i++) {
+            if (s->registeredThreads[i] == current) {
+                s->value--;
+                if (s->value < 0) {
+                    Wait(&s->waitingThreads);
+                }
+                return 0;
+            }
+        }
+        return -1;
+    }
+    return -1;
 }
 
 /*
@@ -271,7 +367,31 @@ static int Sys_CreateSemaphore(struct Interrupt_State* state)
  */
 static int Sys_P(struct Interrupt_State* state)
 {
-    TODO("P (semaphore acquire) system call");
+    // TODO("P (semaphore acquire) system call");
+    return Semaphore_Acquire(state->ebx);
+}
+
+int Semaphore_Release(int semID)
+{
+    struct Kernel_Thread *current = g_currentThread;
+    struct Semaphore *s;
+    for (s = Get_Front_Of_Semaphore_List(&s_SemaphoreList);
+         s != 0; s = Get_Next_In_Semaphore_List(s)) {
+        if (s->semaphoreID != semID) {
+            continue;
+        }
+        for (int i = 0; i < s->registeredThreadCount; i++) {
+            if (s->registeredThreads[i] == current) {
+                s->value++;
+                if (s->value <= 0) {
+                    Wake_Up_One(&s->waitingThreads);
+                }
+                return 0;
+            }
+        }
+        return -1;
+    }
+    return -1;
 }
 
 /*
@@ -283,7 +403,36 @@ static int Sys_P(struct Interrupt_State* state)
  */
 static int Sys_V(struct Interrupt_State* state)
 {
-    TODO("V (semaphore release) system call");
+    // TODO("V (semaphore release) system call");
+    return Semaphore_Release(state->ebx);
+}
+
+int Semaphore_Destroy(int semID)
+{
+    struct Kernel_Thread *current = g_currentThread;
+    struct Semaphore *s;
+    for (s = Get_Front_Of_Semaphore_List(&s_SemaphoreList);
+         s != 0; s = Get_Next_In_Semaphore_List(s)) {
+        if (s->semaphoreID != semID) {
+            continue;
+        }
+        for (int i = 0; i < s->registeredThreadCount; i++) {
+            if (s->registeredThreads[i] == current) {
+                for (int j = i; j < s->registeredThreadCount - 1; j++) {
+                    s->registeredThreads[j] = s->registeredThreads[j + 1];
+                }
+                s->registeredThreadCount--;
+                if (s->registeredThreadCount == 0) {
+                    Remove_From_Semaphore_List(&s_SemaphoreList, s);
+                    Free(s->semaphoreName);
+                    Free(s);
+                }
+                return 0;
+            }
+        }
+        return -1;
+    }
+    return -1;
 }
 
 /*
@@ -295,7 +444,8 @@ static int Sys_V(struct Interrupt_State* state)
  */
 static int Sys_DestroySemaphore(struct Interrupt_State* state)
 {
-    TODO("DestroySemaphore system call");
+    // TODO("DestroySemaphore system call");
+    return Semaphore_Destroy(state->ebx);
 }
 
 

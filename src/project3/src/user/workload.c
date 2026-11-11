@@ -46,7 +46,8 @@ int main(int argc , char ** argv)
   int elapsed;
   int quantum;
   int scr_sem;			/* sid of screen semaphore */
-  int id1, id2, id3;    	/* ID of child process */
+  int id1, id2, id3, id4;    /* ID of child process */
+  int gate;
 
   if (argc == 3) {
       if (!strcmp(argv[1], "rr")) {
@@ -66,34 +67,37 @@ int main(int argc , char ** argv)
 
   start = Get_Time_Of_Day();
   scr_sem = Create_Semaphore ("screen" , 1)  ;
+  gate = Create_Semaphore("short_start", 0);
 
   P (scr_sem) ;
   Print ("************* Start Workload Generator *********\n");
   V (scr_sem) ;
 
-  id1 = Spawn_Program ("/c/long.exe", "/c/long.exe"
-  ) ;
   P (scr_sem) ;
-  Print ("Process Long has been created with ID = %d\n",id1);
-  V (scr_sem) ;
+  Print("PID  Program\n");
 
+  id1 = Spawn_Program ("/c/long.exe", "/c/long.exe");
+  Print("%d  /c/long.exe\n", id1);
 
-  id2 = Spawn_Program ("/c/ping.exe", "/c/ping.exe"
-  ) ;
+  id2 = Spawn_Program ("/c/short.exe", "/c/short.exe");
+  Print("%d  /c/short.exe (Short0)\n", id2);
 
-  P (scr_sem) ;
-  Print ("Process Ping has been created with ID = %d\n",id2);
-  V (scr_sem) ;
+  id3 = Spawn_Program ("/c/short.exe", "/c/short.exe");
+  Print("%d  /c/short.exe (Short1)\n", id3);
 
-  id3 = Spawn_Program ("/c/pong.exe", "/c/pong.exe"
-  ) ;
-  P (scr_sem) ;
-  Print ("Process Pong has been created with ID = %d\n",id3);
-  V (scr_sem) ;
+  id4 = Spawn_Program ("/c/short.exe", "/c/short.exe");
+  Print("%d  /c/short.exe (Short2)\n", id4);
+  assert(id1 > 0 && id2 > 0 && id3 > 0 && id4 > 0);
+  Print("Ready??? Go!\n");
+  V (scr_sem);
+  V(gate);
 
   Wait(id1);
   Wait(id2);
   Wait(id3);
+  Wait(id4);
+  Destroy_Semaphore(gate);
+  Destroy_Semaphore(scr_sem);
 
   elapsed = Get_Time_Of_Day() - start;
   Print ("\nTests Completed at %d\n", elapsed) ;
